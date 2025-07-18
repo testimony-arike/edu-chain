@@ -195,3 +195,137 @@
 (define-private (validate-comment (comment-text (string-ascii 256)))
   (<= (len comment-text) u200)
 )
+
+;; INSTITUTION MANAGEMENT
+
+(define-public (register-institution (name (string-ascii 64)))
+  (let ((caller tx-sender))
+    (asserts!
+      (not (default-to false (get active (map-get? institutions caller))))
+      ERR-ALREADY-REGISTERED
+    )
+    (asserts! (validate-non-empty-string name) ERR-EMPTY-STRING)
+    (try! (stx-transfer? MINIMUM-STAKE caller (as-contract tx-sender)))
+    (map-set institutions caller {
+      name: name,
+      stake-amount: MINIMUM-STAKE,
+      credentials-issued: u0,
+      reputation-score: u100,
+      active: true,
+      suspension-status: false,
+      registration-date: stacks-block-height,
+      last-update: stacks-block-height,
+    })
+    (var-set total-institutions (+ (var-get total-institutions) u1))
+    (ok true)
+  )
+)
+
+(define-public (add-delegate
+    (delegate-address principal)
+    (permissions (list 10 (string-ascii 32)))
+    (expiry uint)
+  )
+  (let ((institution tx-sender))
+    (asserts! (is-institution institution) ERR-NOT-AUTHORIZED)
+    (asserts! (validate-permissions permissions) ERR-INVALID-INPUT)
+    (asserts! (validate-expiry expiry) ERR-INVALID-EXPIRY)
+    (asserts! (validate-principal delegate-address) ERR-INVALID-DELEGATION)
+    (map-set institution-delegates {
+      institution: institution,
+      delegate: delegate-address,
+    } {
+      active: true,
+      permissions: permissions,
+      added-at: stacks-block-height,
+      expiry: expiry,
+    })
+    (ok true)
+  )
+)
+
+;; CREDENTIAL ISSUANCE & MANAGEMENT
+
+(define-public (issue-credential
+    (credential-id (string-ascii 64))
+    (student principal)
+    (degree (string-ascii 64))
+    (year uint)
+    (metadata-url (string-ascii 256))
+    (expiry-date uint)
+    (category (string-ascii 32))
+  )
+  (let (
+      (institution tx-sender)
+      (inst-data (unwrap! (map-get? institutions institution) ERR-NOT-AUTHORIZED))
+    )
+    (asserts! (get active inst-data) ERR-NOT-AUTHORIZED)
+    (asserts! (not (get suspension-status inst-data)) ERR-INVALID-STATUS)
+    (asserts! (validate-credential-id credential-id) ERR-INVALID-INPUT)
+    (asserts! (validate-non-empty-string degree) ERR-INVALID-INPUT)
+    (asserts! (validate-year year) ERR-INVALID-INPUT)
+    (asserts! (validate-url metadata-url) ERR-INVALID-INPUT)
+    (asserts! (validate-expiry expiry-date) ERR-INVALID-EXPIRY)
+    (asserts! (validate-non-empty-string category) ERR-INVALID-INPUT)
+    (asserts! (validate-student student) ERR-INVALID-INPUT)
+    (map-set credentials {
+      id: credential-id,
+      student: student,
+    } {
+      institution: institution,
+      degree: degree,
+      year: year,
+      verified: true,
+      validation-level: u0,
+      endorsements: u0,
+      metadata-url: metadata-url,
+      expiry-date: expiry-date,
+      revoked: false,
+      category: category,
+      issue-date: stacks-block-height,
+      last-endorsed: u0,
+    })
+    (map-set institutions institution
+      (merge inst-data {
+        credentials-issued: (+ (get credentials-issued inst-data) u1),
+        last-update: stacks-block-height,
+      })
+    )
+    (ok true)
+  )
+)
+
+(define-public (batch-issue-credentials
+    (credential-ids (list 50 (string-ascii 64)))
+    (students (list 50 principal))
+    (degrees (list 50 (string-ascii 64)))
+    (years (list 50 uint))
+    (metadata-urls (list 50 (string-ascii 256)))
+    (expiry-dates (list 50 uint))
+    (categories (list 50 (string-ascii 32)))
+  )
+  (let (
+      (institution tx-sender)
+      (batch-size (len credential-ids))
+    )
+    (asserts! (<= batch-size MAX-BATCH-SIZE) ERR-INVALID-BATCH-SIZE)
+    (asserts! (is-institution institution) ERR-NOT-AUTHORIZED)
+    ;; Validate input lengths match
+    (asserts!
+      (and
+        (is-eq batch-size (len students))
+        (is-eq batch-size (len degrees))
+        (is-eq batch-size (len years))
+        (is-eq batch-size (len metadata-urls))
+        (is-eq batch-size (len expiry-dates))
+        (is-eq batch-size (len categories))
+      )
+      ERR-INVALID-BATCH-SIZE
+    )
+    ;; Validate each expiry date
+    (asserts! (fold check-all-expiry-dates expiry-dates true) ERR-INVALID-EXPIRY)
+    (ok (map process-credential-issuance credential-ids students degrees years
+      metadata-urls expiry-dates categories
+    ))
+  )
+)
