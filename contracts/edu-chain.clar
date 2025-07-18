@@ -429,3 +429,57 @@
     (ok transfer-id)
   )
 )
+
+;; HELPER FUNCTIONS
+
+(define-private (is-institution (address principal))
+  (default-to false (get active (map-get? institutions address)))
+)
+
+(define-private (sanitize-string (input (string-ascii 64)))
+  input
+)
+
+(define-private (check-all-expiry-dates
+    (expiry uint)
+    (valid-so-far bool)
+  )
+  (and valid-so-far (validate-expiry expiry))
+)
+
+(define-private (process-credential-issuance
+    (credential-id (string-ascii 64))
+    (student principal)
+    (degree (string-ascii 64))
+    (year uint)
+    (metadata-url (string-ascii 256))
+    (expiry-date uint)
+    (category (string-ascii 32))
+  )
+  (begin
+    (map-set credentials {
+      id: credential-id,
+      student: student,
+    } {
+      institution: tx-sender,
+      degree: degree,
+      year: year,
+      verified: true,
+      validation-level: u0,
+      endorsements: u0,
+      metadata-url: metadata-url,
+      expiry-date: expiry-date,
+      revoked: false,
+      category: category,
+      issue-date: stacks-block-height,
+      last-endorsed: u0,
+    })
+    true
+  )
+)
+
+;; READ-ONLY FUNCTIONS
+
+(define-read-only (get-institution-info (institution principal))
+  (map-get? institutions institution)
+)
