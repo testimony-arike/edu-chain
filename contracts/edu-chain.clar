@@ -96,3 +96,102 @@
     last-endorsed: uint,
   }
 )
+
+;; Endorsement System
+(define-map endorsements
+  {
+    credential-id: (string-ascii 64),
+    endorser: principal,
+  }
+  {
+    timestamp: uint,
+    weight: uint,
+    comment: (string-ascii 256),
+    endorser-type: (string-ascii 32),
+  }
+)
+
+;; Delegation Management
+(define-map institution-delegates
+  {
+    institution: principal,
+    delegate: principal,
+  }
+  {
+    active: bool,
+    permissions: (list 10 (string-ascii 32)),
+    added-at: uint,
+    expiry: uint,
+  }
+)
+
+;; Transfer Protocol
+(define-map transfer-requests
+  uint
+  {
+    credential-id: (string-ascii 64),
+    old-owner: principal,
+    new-owner: principal,
+    status: (string-ascii 16),
+    request-time: uint,
+    expiry-time: uint,
+    transfer-type: (string-ascii 32),
+  }
+)
+
+;; INPUT VALIDATION FUNCTIONS
+
+(define-private (validate-non-empty-string (input (string-ascii 64)))
+  (> (len input) u0)
+)
+
+(define-private (validate-url (url (string-ascii 256)))
+  (and
+    (> (len url) u0)
+    true
+  )
+)
+
+(define-private (validate-year (year uint))
+  (and
+    (> year u1900)
+    (< year (+ u2100 u1))
+  )
+)
+
+(define-private (validate-expiry (expiry uint))
+  (> expiry stacks-block-height)
+)
+
+(define-private (validate-credential-id (credential-id (string-ascii 64)))
+  (and
+    (> (len credential-id) u0)
+    true
+  )
+)
+
+(define-private (validate-permissions (permissions (list 10 (string-ascii 32))))
+  (and
+    (> (len permissions) u0)
+    true
+  )
+)
+
+(define-private (validate-endorsement-weight (weight uint))
+  (and
+    (>= weight u1)
+    (<= weight u100)
+  )
+)
+
+(define-private (validate-principal (address principal))
+  (not (is-eq address tx-sender))
+)
+
+(define-private (validate-student (student-address principal))
+  (not (is-eq student-address tx-sender))
+)
+
+(define-private (validate-comment (comment-text (string-ascii 256)))
+  (<= (len comment-text) u200)
+)
